@@ -9,6 +9,7 @@ from tkinter import messagebox, simpledialog, ttk
 from typing import List, Optional
 
 from . import acciones, config
+from .editor import Editor
 from .config import Config, ErrorConfig, Objetivo
 from .remoto import Resultado
 
@@ -32,7 +33,7 @@ class Aplicacion:
         self.horas = tk.StringVar(value=f"{cfg.horas:g}")
 
         ttk.Label(datos, text="Aula").grid(row=0, column=0, sticky="w")
-        combo = ttk.Combobox(datos, textvariable=self.aula, state="readonly",
+        combo = self.combo = ttk.Combobox(datos, textvariable=self.aula, state="readonly",
                              values=[RANGO_MANUAL] + [a.nombre for a in cfg.aulas.values()])
         combo.grid(row=0, column=1, sticky="ew", padx=4)
         combo.bind("<<ComboboxSelected>>", self._al_elegir_aula)
@@ -53,6 +54,9 @@ class Aplicacion:
             b = ttk.Button(botones, text=TITULOS[accion], command=lambda a=accion: self._lanzar(a))
             b.pack(side="left", padx=2)
             self.botones.append(b)
+        b = ttk.Button(botones, text="Configuración…", command=self._configurar)
+        b.pack(side="right", padx=2)
+        self.botones.append(b)
         b = ttk.Button(botones, text="Reintentar fallidos", command=self._reintentar)
         b.pack(side="right", padx=2)
         self.botones.append(b)
@@ -75,6 +79,19 @@ class Aplicacion:
         self.aviso = tk.StringVar(value="Elige un aula o escribe un rango.")
         ttk.Label(raiz, textvariable=self.aviso, padding=8).pack(fill="x")
         raiz.after(100, self._vaciar_cola)
+
+    def _configurar(self) -> None:
+        Editor(self.raiz, self.cfg, self._config_guardada)
+
+    def _config_guardada(self, cfg: Config) -> None:
+        self.cfg = cfg
+        nombres = [a.nombre for a in cfg.aulas.values()]
+        self.combo.configure(values=[RANGO_MANUAL] + nombres)
+        if self.aula.get() not in nombres:
+            self.aula.set(RANGO_MANUAL)
+        else:
+            self._al_elegir_aula()
+        self.aviso.set("Configuración guardada.")
 
     def _al_elegir_aula(self, _evento=None) -> None:
         nombre = self.aula.get()

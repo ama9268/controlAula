@@ -155,3 +155,23 @@ class TestCargar(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGuardar(unittest.TestCase):
+    def test_ida_y_vuelta(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = Path(d) / "aulas.ini"
+            cfg = config.Config(usuario="prof", permitidas=["10.0.0.4", "10.0.0.7:443/tcp"], horas=2.5,
+                                puertos=["22/tcp", "5900/udp"], paralelo=10)
+            cfg.aulas["a1"] = config.Aula("a1", "Aula 1", "10.1.1.20", "10.1.1.30", "10.1.1.253")
+            cfg.aulas["a2"] = config.Aula("a2", "Aula 2", "10.2.2.20", "10.2.2.30", "10.2.2.253",
+                                         ["10.0.0.9"], ["22/tcp"])
+            config.guardar(cfg, ruta)
+            self.assertEqual(config.cargar(ruta), cfg)
+            config.guardar(cfg, ruta)
+            self.assertTrue((Path(d) / "aulas.ini.bak").exists())
+
+    def test_clave_aula(self):
+        for mala in ("general", "a b", "x]", ""):
+            with self.assertRaises(ErrorConfig, msg=mala):
+                config.validar_clave_aula(mala)

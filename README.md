@@ -44,6 +44,10 @@ Sin protocolo se entiende `tcp`. Ejemplos: `permitidas = 10.0.0.4, 10.0.5.0/24, 
 - Una regla con puerto (`10.0.0.2:443`) solo abre ese puerto en ese destino; sin puerto (`10.0.0.2`) se abre todo el tráfico a esa IP.
 - Solo IPv4 en las salidas. Cualquier valor que no cumpla el formato se rechaza al cargar el fichero y, de nuevo, en el equipo del alumno.
 
+## Editor visual
+
+El botón **Configuración…** de la ventana abre un editor de `aulas.ini`: pestaña *General* (usuario, horas, paralelo, salidas y entradas) y pestaña *Aulas* (añadir, quitar y editar, con reglas propias opcionales). Valida antes de guardar y deja una copia en `aulas.ini.bak`. Al guardar se reescribe el fichero entero, por lo que se pierden los comentarios que tuviera.
+
 ## Uso
 
 Sin argumentos abre la ventana: se elige el aula (o un rango), se pulsa **Bloquear** o **Desbloquear** y se introduce la contraseña de sudo. La tabla muestra el resultado de cada equipo y **Reintentar fallidos** repite la operación solo sobre los que fallaron.

@@ -5,6 +5,7 @@ import configparser
 import ipaddress
 import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +15,7 @@ RUTA_POR_DEFECTO = Path.home() / ".config" / "control-examen" / "aulas.ini"
 RE_USUARIO = re.compile(r"^[a-z_][a-z0-9_.-]{0,31}$")
 MAX_HORAS = 24
 PUERTO_SSH = "22/tcp"
+RE_CLAVE_AULA = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 RE_SALIDA = re.compile(r"^(?P<destino>[0-9.]+(?:/[0-9]{1,2})?)(?::(?P<puerto>[0-9]{1,5})(?:/(?P<proto>tcp|udp))?)?$")
 RE_ENTRADA = re.compile(r"^(?P<puerto>[0-9]{1,5})(?:/(?P<proto>tcp|udp))?$")
 
@@ -183,9 +185,57 @@ def _lista(texto: str) -> List[str]:
     return [x.strip() for x in texto.split(",") if x.strip()]
 
 
+def ruta_config(ruta: Optional[os.PathLike] = None) -> Path:
+    return Path(ruta or os.environ.get("CONTROL_EXAMEN_CONFIG") or RUTA_POR_DEFECTO)
+
+
+def validar_clave_aula(clave: str) -> str:
+    clave = clave.strip()
+    if not RE_CLAVE_AULA.match(clave) or clave.lower() == "general":
+        raise ErrorConfig(f"Clave de aula no válida: '{clave}' (letras, números, _ y -; no 'general')")
+    return clave
+
+
+def _texto_ini(cfg: Config) -> str:
+    lineas = [
+        "; Generado por el editor de Control de Examen.",
+        "",
+        "[general]",
+        f"usuario = {cfg.usuario}",
+        f"permitidas = {', '.join(cfg.permitidas)}",
+        f"horas_autodesbloqueo = {cfg.horas:g}",
+        f"puertos_entrada = {', '.join(cfg.puertos)}",
+        f"paralelo = {cfg.paralelo}",
+    ]
+    for aula in cfg.aulas.values():
+        lineas += ["", f"[{aula.clave}]", f"nombre = {aula.nombre}", f"inicio = {aula.inicio}",
+                   f"fin = {aula.fin}", f"profesor = {aula.profesor}"]
+        if aula.permitidas is not None:
+            lineas.append(f"permitidas = {', '.join(aula.permitidas)}")
+        if aula.puertos is not None:
+            lineas.append(f"puertos_entrada = {', '.join(aula.puertos)}")
+    return "\n".join(lineas) + "\n"
+
+
+def guardar(cfg: Config, ruta: Optional[os.PathLike] = None) -> Path:
+    """Escribe aulas.ini. Comprueba que se puede volver a leer y guarda una copia .bak."""
+    ruta = ruta_config(ruta)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    temporal = ruta.with_name(ruta.name + ".tmp")
+    try:
+        temporal.write_text(_texto_ini(cfg), encoding="utf-8")
+        cargar(temporal)  # si no se puede releer, no se toca el original
+        if ruta.exists():
+            shutil.copy2(ruta, ruta.with_name(ruta.name + ".bak"))
+        os.replace(temporal, ruta)
+    finally:
+        temporal.unlink(missing_ok=True)
+    return ruta
+
+
 def cargar(ruta: Optional[os.PathLike] = None) -> Config:
     """Lee aulas.ini. Si no existe, usa los valores por defecto sin aulas."""
-    ruta = Path(ruta or os.environ.get("CONTROL_EXAMEN_CONFIG") or RUTA_POR_DEFECTO)
+    ruta = ruta_config(ruta)
     cfg = Config()
     if not ruta.exists():
         return cfg
