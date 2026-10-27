@@ -1,0 +1,4 @@
+#!/bin/sh
+# Lanzador: sin argumentos abre la ventana; con argumentos, la línea de órdenes.
+DIR=$(dirname "$(readlink -f "$0")")
+PYTHONPATH="$DIR${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m control_examen "$@"

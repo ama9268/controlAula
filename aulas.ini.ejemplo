@@ -1,0 +1,20 @@
+; Copiar a ~/.config/control-examen/aulas.ini y adaptar.
+
+[general]
+; Usuario con el que se entra por SSH en los alumnos (el mismo que con cssh).
+usuario = profesor
+; Destinos permitidos además del PC del profesor: Moodle y servidor web.
+permitidas = 10.0.0.4, 10.0.0.2
+; El bloqueo se retira solo pasadas estas horas (máximo 24).
+horas_autodesbloqueo = 4
+; Puertos de entrada permitidos: SSH (obligatorio) y Veyon.
+puertos_entrada = 22, 11100
+; Equipos a los que se conecta a la vez.
+paralelo = 30
+
+; Una sección por aula. "profesor" es opcional (por defecto, la .253 de la red).
+[aula14]
+nombre = Aula 14
+inicio = 10.14.14.20
+fin = 10.14.14.45
+profesor = 10.14.14.253
