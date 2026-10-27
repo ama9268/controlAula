@@ -5,8 +5,8 @@ Se ejecuta en el PC del profesor y actúa por SSH sobre un rango de IPs o un aul
 
 Con el bloqueo activo, cada PC de alumno:
 
-- **solo puede salir** hacia el PC del profesor, Moodle (10.0.0.4) y el servidor web (10.0.0.2), además de DHCP;
-- **solo acepta entradas** por SSH (22) y Veyon (11100);
+- **solo puede salir** hacia el PC del profesor y los destinos que configures (por defecto Moodle 10.0.0.4 y el servidor web 10.0.0.2), además de DHCP;
+- **solo acepta entradas** por los puertos que configures (por defecto SSH 22 y Veyon 11100);
 - **pierde las conexiones salientes que ya tuviera abiertas** (pestañas, chats…);
 - **sigue bloqueado aunque se reinicie**;
 - **se desbloquea solo** pasadas las horas indicadas (4 por defecto), por si el profesor lo olvida o su PC falla.
@@ -27,6 +27,22 @@ mkdir -p ~/.config/control-examen
 cp aulas.ini.ejemplo ~/.config/control-examen/aulas.ini   # y editar las aulas
 ./control-examen comprobar --aula aula14                  # ensayo, sin sudo
 ```
+
+## Configurar salidas y entradas
+
+Todo se define en `aulas.ini`, en `[general]` o en cada aula.
+
+| Clave | Qué controla | Formatos |
+|---|---|---|
+| `permitidas` | Destinos a los que pueden salir los alumnos (además del PC del profesor, que siempre se permite) | `IP`, `IP/prefijo`, `IP:puerto`, `IP:puerto/tcp\|udp` |
+| `puertos_entrada` | Puertos por los que pueden recibir conexiones | `puerto`, `puerto/tcp\|udp` |
+
+Sin protocolo se entiende `tcp`. Ejemplos: `permitidas = 10.0.0.4, 10.0.5.0/24, 10.0.0.7:443, 10.0.0.9:53/udp` y `puertos_entrada = 22, 11100, 5900/udp`.
+
+- `22/tcp` (SSH) se añade siempre a las entradas: sin él se perdería el control del equipo. El agente también se niega a bloquear si no está.
+- Si un aula define `permitidas` o `puertos_entrada`, **sustituyen** a los de `[general]` solo en esa aula. Hay que repetir lo que se quiera mantener (por ejemplo, Moodle).
+- Una regla con puerto (`10.0.0.2:443`) solo abre ese puerto en ese destino; sin puerto (`10.0.0.2`) se abre todo el tráfico a esa IP.
+- Solo IPv4 en las salidas. Cualquier valor que no cumpla el formato se rechaza al cargar el fichero y, de nuevo, en el equipo del alumno.
 
 ## Uso
 
@@ -74,7 +90,7 @@ Limitaciones conocidas:
 ```bash
 python3 -m unittest        # configuración, comandos remotos y validación del agente
 bash -n control_examen/agente/examen-fw.sh && shellcheck control_examen/agente/examen-fw.sh
-bash control_examen/agente/examen-fw.sh generar-nft --permitidas 10.14.14.253,10.0.0.4 --puertos 22,11100
+bash control_examen/agente/examen-fw.sh generar-nft --permitidas 10.14.14.253,10.0.0.4,10.0.0.2:443 --puertos 22,11100,5900/udp
 ```
 
 Antes de usarlo en un examen real, pruébalo en un solo equipo:

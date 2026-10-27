@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from dataclasses import replace
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 from typing import List, Optional
@@ -108,7 +109,9 @@ class Aplicacion:
             texto = f"¿{TITULOS[accion]} {objetivo.descripcion}?"
             if accion == "bloquear":
                 texto += (f"\n\nSalidas permitidas: profesor {objetivo.profesor}, "
-                          f"{', '.join(self.cfg.permitidas)}\nAutodesbloqueo en {horas:g} h")
+                          f"{', '.join(objetivo.permitidas)}\n"
+                          f"Entradas permitidas: {', '.join(objetivo.puertos)}\n"
+                          f"Autodesbloqueo en {horas:g} h")
                 locales = config.ips_locales()
                 if locales and objetivo.profesor not in locales:
                     texto += f"\n\nAVISO: este PC no tiene la IP {objetivo.profesor}."
@@ -136,7 +139,7 @@ class Aplicacion:
             elif accion == "estado":
                 resultados = acciones.estado(objetivo.ips, self.cfg, avisar)
             elif accion == "bloquear":
-                resultados = acciones.bloquear(objetivo.ips, self.cfg, clave, objetivo.profesor, horas, avisar)
+                resultados = acciones.bloquear(objetivo.ips, self.cfg, clave, objetivo, horas, avisar)
             else:
                 resultados = acciones.desbloquear(objetivo.ips, self.cfg, clave, avisar)
             acciones.registrar(accion, objetivo, resultados)
@@ -179,8 +182,8 @@ class Aplicacion:
         if not fallidos:
             messagebox.showinfo("Reintentar", "No hay equipos con fallo.", parent=self.raiz)
             return
-        self._lanzar(accion, Objetivo(fallidos, objetivo.profesor,
-                                      f"{len(fallidos)} equipos con fallo"))
+        self._lanzar(accion, replace(objetivo, ips=fallidos,
+                                     descripcion=f"{len(fallidos)} equipos con fallo"))
 
     def _ocupado(self, ocupado: bool) -> None:
         for b in self.botones:

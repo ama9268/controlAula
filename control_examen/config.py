@@ -13,7 +13,9 @@ from typing import Dict, List, Optional
 RUTA_POR_DEFECTO = Path.home() / ".config" / "control-examen" / "aulas.ini"
 RE_USUARIO = re.compile(r"^[a-z_][a-z0-9_.-]{0,31}$")
 MAX_HORAS = 24
-PUERTO_SSH = 22
+PUERTO_SSH = "22/tcp"
+RE_SALIDA = re.compile(r"^(?P<destino>[0-9.]+(?:/[0-9]{1,2})?)(?::(?P<puerto>[0-9]{1,5})(?:/(?P<proto>tcp|udp))?)?$")
+RE_ENTRADA = re.compile(r"^(?P<puerto>[0-9]{1,5})(?:/(?P<proto>tcp|udp))?$")
 
 
 class ErrorConfig(ValueError):
@@ -27,6 +29,9 @@ class Aula:
     inicio: str
     fin: str
     profesor: str
+    # None: usa los valores de [general]. Si se indican, los sustituyen.
+    permitidas: Optional[List[str]] = None
+    puertos: Optional[List[str]] = None
 
 
 @dataclass
@@ -34,7 +39,7 @@ class Config:
     usuario: str = "profesor"
     permitidas: List[str] = field(default_factory=lambda: ["10.0.0.4", "10.0.0.2"])
     horas: float = 4
-    puertos: List[int] = field(default_factory=lambda: [22, 11100])
+    puertos: List[str] = field(default_factory=lambda: ["22/tcp", "11100/tcp"])
     paralelo: int = 30
     aulas: Dict[str, Aula] = field(default_factory=dict)
 
@@ -53,6 +58,8 @@ class Objetivo:
     ips: List[str]
     profesor: str
     descripcion: str
+    permitidas: List[str] = field(default_factory=list)  # destinos de salida
+    puertos: List[str] = field(default_factory=list)     # puertos de entrada
 
 
 def validar_ip(texto: str) -> str:
@@ -61,6 +68,54 @@ def validar_ip(texto: str) -> str:
     except ValueError:
         raise ErrorConfig(f"IP no válida: '{texto}'") from None
     return str(ip)
+
+
+def _puerto(texto: str, original: str) -> int:
+    puerto = int(texto)
+    if not 1 <= puerto <= 65535:
+        raise ErrorConfig(f"Puerto fuera de rango en '{original}'")
+    return puerto
+
+
+def validar_salida(texto: str) -> str:
+    """Destino de salida: IP, IP/prefijo, IP:puerto o IP:puerto/tcp|udp (se normaliza)."""
+    texto = texto.strip()
+    m = RE_SALIDA.match(texto)
+    try:
+        if not m:
+            raise ValueError
+        red = ipaddress.IPv4Network(m.group("destino"), strict=True)
+    except ValueError:
+        raise ErrorConfig(f"Destino permitido no válido: '{texto}' "
+                          "(usa IP, IP/prefijo o IP:puerto[/tcp|udp])") from None
+    destino = str(red.network_address) if red.prefixlen == 32 else str(red)
+    if m.group("puerto"):
+        destino += f":{_puerto(m.group('puerto'), texto)}/{m.group('proto') or 'tcp'}"
+    return destino
+
+
+def validar_entrada(texto: str) -> str:
+    """Puerto de entrada: puerto o puerto/tcp|udp (se normaliza a puerto/proto)."""
+    texto = texto.strip()
+    m = RE_ENTRADA.match(texto)
+    if not m:
+        raise ErrorConfig(f"Puerto de entrada no válido: '{texto}' (usa puerto o puerto/tcp|udp)")
+    return f"{_puerto(m.group('puerto'), texto)}/{m.group('proto') or 'tcp'}"
+
+
+def lista_salidas(texto: str) -> List[str]:
+    lista = list(dict.fromkeys(validar_salida(x) for x in _lista(texto)))
+    if not lista:
+        raise ErrorConfig("La lista de destinos permitidos está vacía")
+    return lista
+
+
+def lista_entradas(texto: str) -> List[str]:
+    """Lista de puertos de entrada; añade SSH siempre (sin él se perdería el control)."""
+    lista = list(dict.fromkeys(validar_entrada(x) for x in _lista(texto)))
+    if PUERTO_SSH not in lista:
+        lista.insert(0, PUERTO_SSH)
+    return lista
 
 
 def validar_horas(horas: float) -> float:
@@ -118,7 +173,10 @@ def resolver_objetivo(cfg: Config, aula: Optional[str] = None, inicio: str = "",
     if not ips:
         raise ErrorConfig("El rango no contiene ningún equipo de alumno")
     nombre = f"{datos.nombre}: " if datos else ""
-    return Objetivo(ips, profesor, f"{nombre}{ips[0]} – {ips[-1]} ({len(ips)} equipos)")
+    permitidas = datos.permitidas if datos and datos.permitidas is not None else cfg.permitidas
+    puertos = datos.puertos if datos and datos.puertos is not None else cfg.puertos
+    return Objetivo(ips, profesor, f"{nombre}{ips[0]} – {ips[-1]} ({len(ips)} equipos)",
+                    list(permitidas), list(puertos))
 
 
 def _lista(texto: str) -> List[str]:
@@ -138,11 +196,11 @@ def cargar(ruta: Optional[os.PathLike] = None) -> Config:
         general = ini["general"] if ini.has_section("general") else {}
         cfg.usuario = general.get("usuario", cfg.usuario).strip()
         if "permitidas" in general:
-            cfg.permitidas = [validar_ip(x) for x in _lista(general["permitidas"])]
+            cfg.permitidas = lista_salidas(general["permitidas"])
         if "horas_autodesbloqueo" in general:
             cfg.horas = validar_horas(float(general["horas_autodesbloqueo"]))
         if "puertos_entrada" in general:
-            cfg.puertos = [int(x) for x in _lista(general["puertos_entrada"])]
+            cfg.puertos = lista_entradas(general["puertos_entrada"])
         if "paralelo" in general:
             cfg.paralelo = int(general["paralelo"])
     except (configparser.Error, ValueError) as e:
@@ -150,10 +208,6 @@ def cargar(ruta: Optional[os.PathLike] = None) -> Config:
 
     if not RE_USUARIO.match(cfg.usuario):
         raise ErrorConfig(f"{ruta}: usuario no válido: '{cfg.usuario}'")
-    if any(not 1 <= p <= 65535 for p in cfg.puertos):
-        raise ErrorConfig(f"{ruta}: puerto fuera de rango")
-    if PUERTO_SSH not in cfg.puertos:
-        cfg.puertos.insert(0, PUERTO_SSH)  # sin SSH se perdería el control del equipo
     if not 1 <= cfg.paralelo <= 100:
         raise ErrorConfig(f"{ruta}: 'paralelo' debe estar entre 1 y 100")
 
@@ -165,9 +219,12 @@ def cargar(ruta: Optional[os.PathLike] = None) -> Config:
             inicio, fin = validar_ip(s["inicio"]), validar_ip(s["fin"])
             expandir_rango(inicio, fin)
             profesor = validar_ip(s.get("profesor") or profesor_por_defecto(inicio))
+            permitidas = lista_salidas(s["permitidas"]) if "permitidas" in s else None
+            puertos = lista_entradas(s["puertos_entrada"]) if "puertos_entrada" in s else None
         except KeyError as e:
             raise ErrorConfig(f"{ruta}: falta {e} en el aula [{seccion}]") from None
         except ErrorConfig as e:
             raise ErrorConfig(f"{ruta}: aula [{seccion}]: {e}") from None
-        cfg.aulas[seccion] = Aula(seccion, s.get("nombre", seccion).strip(), inicio, fin, profesor)
+        cfg.aulas[seccion] = Aula(seccion, s.get("nombre", seccion).strip(), inicio, fin, profesor,
+                                 permitidas, puertos)
     return cfg

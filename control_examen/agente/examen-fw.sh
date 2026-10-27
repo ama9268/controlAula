@@ -25,8 +25,12 @@ readonly SERVICIO_EXPIRA=examen-fw-expira.service
 # Sin ceros a la izquierda: bash interpretaría 022 como octal.
 readonly OCTETO='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
 readonly IP="$OCTETO\\.$OCTETO\\.$OCTETO\\.$OCTETO"
-readonly RE_LISTA_IPS="^$IP(,$IP)*$"
-readonly RE_LISTA_PUERTOS='^[1-9][0-9]{0,4}(,[1-9][0-9]{0,4})*$'
+readonly PREFIJO='(3[0-2]|[12]?[0-9])'
+readonly PUERTO='[1-9][0-9]{0,4}'
+readonly PROTO='(tcp|udp)'
+# Salida: IP, IP/prefijo, IP:puerto o IP:puerto/proto. Entrada: puerto o puerto/proto.
+readonly RE_SALIDA="^$IP(/$PREFIJO)?(:$PUERTO(/$PROTO)?)?\$"
+readonly RE_ENTRADA="^$PUERTO(/$PROTO)?\$"
 readonly RE_MINUTOS='^[1-9][0-9]{0,3}$'
 readonly MAX_MINUTOS=1440
 
@@ -38,10 +42,11 @@ fallo() {
 uso() {
     cat <<'EOF'
 Uso: examen-fw <acción> [opciones]
-  bloquear --permitidas IP[,IP...] --puertos P[,P...] --minutos N
+  bloquear --permitidas DESTINO[,...] --puertos ENTRADA[,...] --minutos N
   desbloquear
   estado
-  generar-nft --permitidas IP[,IP...] --puertos P[,P...]   (solo muestra las reglas)
+  generar-nft --permitidas DESTINO[,...] --puertos ENTRADA[,...]   (solo muestra las reglas)
+DESTINO: IP, IP/prefijo, IP:puerto o IP:puerto/tcp|udp.  ENTRADA: puerto o puerto/tcp|udp.
 Uso interno (systemd): aplicar, quitar-tabla
 EOF
 }
@@ -51,31 +56,75 @@ requiere_root() {
     command -v nft >/dev/null || fallo "nftables (nft) no está instalado"
 }
 
-# Rellena PERMITIDAS, PUERTOS y MINUTOS a partir de las opciones, validándolas.
+# Protocolo de "puerto[/proto]" (tcp si no se indica).
+proto_de() {
+    if [[ $1 == */* ]]; then echo "${1##*/}"; else echo tcp; fi
+}
+
+puerto_valido() {
+    ((10#$1 >= 1 && 10#$1 <= 65535))
+}
+
+# Rellena SALIDAS, ENTRADAS y MINUTOS a partir de las opciones, validándolos.
+# Los mensajes no repiten el valor recibido para no reflejar texto arbitrario.
 leer_opciones() {
-    PERMITIDAS="" PUERTOS="" MINUTOS=""
+    local permitidas="" puertos=""
+    MINUTOS=""
     while (($#)); do
         (($# >= 2)) || fallo "falta el valor de $1"
         case $1 in
-            --permitidas) PERMITIDAS=$2 ;;
-            --puertos) PUERTOS=$2 ;;
+            --permitidas) permitidas=$2 ;;
+            --puertos) puertos=$2 ;;
             --minutos) MINUTOS=$2 ;;
             *) fallo "opción desconocida: $1" ;;
         esac
         shift 2
     done
 
-    [[ $PERMITIDAS =~ $RE_LISTA_IPS ]] || fallo "lista de IPs permitidas no válida"
-    [[ $PUERTOS =~ $RE_LISTA_PUERTOS ]] || fallo "lista de puertos no válida"
-    local puerto ssh=no
-    local -a puertos
-    IFS=, read -r -a puertos <<<"$PUERTOS"
-    for puerto in "${puertos[@]}"; do
-        ((puerto <= 65535)) || fallo "puerto fuera de rango: $puerto"
-        [[ $puerto != 22 ]] || ssh=si
+    [[ -n $permitidas && -n $puertos ]] || fallo "faltan --permitidas o --puertos"
+    local lista
+    for lista in "$permitidas" "$puertos"; do
+        [[ $lista != ,* && $lista != *, && $lista != *,,* ]] || fallo "lista con elementos vacíos"
+        # read solo lee la primera línea: un salto de línea se rechaza, no se trunca.
+        [[ $lista != *$'\n'* ]] || fallo "lista con saltos de línea"
+    done
+    IFS=, read -r -a SALIDAS <<<"$permitidas"
+    IFS=, read -r -a ENTRADAS <<<"$puertos"
+
+    local item resto ssh=no
+    for item in "${SALIDAS[@]}"; do
+        [[ $item =~ $RE_SALIDA ]] || fallo "destino permitido no válido"
+        if [[ $item == *:* ]]; then
+            resto=${item#*:}
+            puerto_valido "${resto%%/*}" || fallo "puerto de salida fuera de rango"
+        fi
+    done
+    for item in "${ENTRADAS[@]}"; do
+        [[ $item =~ $RE_ENTRADA ]] || fallo "puerto de entrada no válido"
+        puerto_valido "${item%%/*}" || fallo "puerto de entrada fuera de rango"
+        [[ ${item%%/*} == 22 && $(proto_de "$item") == tcp ]] && ssh=si
     done
     # Sin SSH el profesor perdería el control del equipo.
-    [[ $ssh == si ]] || fallo "el puerto 22 (SSH) debe estar permitido"
+    [[ $ssh == si ]] || fallo "el puerto 22/tcp (SSH) debe estar permitido"
+}
+
+reglas_entrada() {
+    local item
+    for item in "${ENTRADAS[@]}"; do
+        printf '\t\t%s dport %s accept\n' "$(proto_de "$item")" "${item%%/*}"
+    done
+}
+
+reglas_salida() {
+    local item resto
+    for item in "${SALIDAS[@]}"; do
+        if [[ $item == *:* ]]; then
+            resto=${item#*:}
+            printf '\t\tip daddr %s %s dport %s accept\n' "${item%%:*}" "$(proto_de "$resto")" "${resto%%/*}"
+        else
+            printf '\t\tip daddr %s accept\n' "$item"
+        fi
+    done
 }
 
 generar_nft() {
@@ -89,7 +138,7 @@ table inet examen {
 		iif "lo" accept
 		ct state invalid drop
 		ct state established,related accept
-		tcp dport { ${PUERTOS//,/, } } accept
+$(reglas_entrada)
 		udp sport 67 udp dport 68 accept
 		meta l4proto { icmp, ipv6-icmp } accept
 	}
@@ -99,7 +148,7 @@ table inet examen {
 		# Solo respuestas a conexiones entrantes (SSH, Veyon). Las conexiones
 		# salientes abiertas antes del bloqueo quedan cortadas.
 		ct direction reply accept
-		ip daddr { ${PERMITIDAS//,/, } } accept
+$(reglas_salida)
 		udp dport 67 accept
 		icmpv6 type { nd-router-solicit, nd-neighbor-solicit, nd-neighbor-advert } accept
 		reject with icmpx type admin-prohibited

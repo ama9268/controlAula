@@ -54,14 +54,15 @@ class TestComandoSudo(unittest.TestCase):
         self.assertTrue(orden.endswith(shlex.quote("a; reboot")))
 
     def test_argumentos_bloqueo(self):
-        cfg = config.Config()
-        args = acciones.argumentos_bloqueo(cfg, "10.14.14.253", 2)
-        self.assertEqual(args, ["bloquear", "--permitidas", "10.14.14.253,10.0.0.4,10.0.0.2",
-                                "--puertos", "22,11100", "--minutos", "120"])
+        obj = config.Objetivo(["10.14.14.20"], "10.14.14.253", "x", ["10.0.0.4", "10.0.0.2:443/tcp"],
+                              ["22/tcp", "5900/udp"])
+        args = acciones.argumentos_bloqueo(obj, 2)
+        self.assertEqual(args, ["bloquear", "--permitidas", "10.14.14.253,10.0.0.4,10.0.0.2:443/tcp",
+                                "--puertos", "22/tcp,5900/udp", "--minutos", "120"])
 
     def test_profesor_no_se_duplica(self):
-        args = acciones.argumentos_bloqueo(config.Config(), "10.0.0.4", 1)
-        self.assertEqual(args[2], "10.0.0.4,10.0.0.2")
+        obj = config.Objetivo(["10.0.0.1"], "10.0.0.4", "x", ["10.0.0.4", "10.0.0.2"], ["22/tcp"])
+        self.assertEqual(acciones.argumentos_bloqueo(obj, 1)[2], "10.0.0.4,10.0.0.2")
 
 
 class TestAgente(unittest.TestCase):
@@ -71,11 +72,15 @@ class TestAgente(unittest.TestCase):
         return subprocess.run(["bash", str(AGENTE), *args], capture_output=True, text=True)
 
     def test_reglas(self):
-        p = self._agente("generar-nft", "--permitidas", "10.14.14.253,10.0.0.4,10.0.0.2",
-                         "--puertos", "22,11100")
+        p = self._agente("generar-nft", "--permitidas",
+                         "10.14.14.253,10.0.0.4,10.0.0.0/24,10.0.0.2:443/tcp,10.0.0.9:53/udp",
+                         "--puertos", "22/tcp,11100,5900/udp")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertIn("ip daddr { 10.14.14.253, 10.0.0.4, 10.0.0.2 } accept", p.stdout)
-        self.assertIn("tcp dport { 22, 11100 } accept", p.stdout)
+        for linea in ("ip daddr 10.14.14.253 accept", "ip daddr 10.0.0.4 accept",
+                      "ip daddr 10.0.0.0/24 accept", "ip daddr 10.0.0.2 tcp dport 443 accept",
+                      "ip daddr 10.0.0.9 udp dport 53 accept", "tcp dport 22 accept",
+                      "tcp dport 11100 accept", "udp dport 5900 accept"):
+            self.assertIn(linea, p.stdout)
         self.assertIn("policy drop", p.stdout)
         self.assertIn("ct direction reply accept", p.stdout)
 
@@ -86,7 +91,16 @@ class TestAgente(unittest.TestCase):
             ("--permitidas", "10.0.0.04", "--puertos", "22"),
             ("--permitidas", "10.0.0.256", "--puertos", "22"),
             ("--permitidas", "10.0.0.4", "--puertos", "11100"),
+            ("--permitidas", "10.0.0.4", "--puertos", "22/udp"),
             ("--permitidas", "10.0.0.4", "--puertos", "22,022"),
+            ("--permitidas", "10.0.0.4:0", "--puertos", "22"),
+            ("--permitidas", "10.0.0.4:70000", "--puertos", "22"),
+            ("--permitidas", "10.0.0.4:80/icmp", "--puertos", "22"),
+            ("--permitidas", "10.0.0.4/33", "--puertos", "22"),
+            ("--permitidas", "10.0.0.4,,10.0.0.2", "--puertos", "22"),
+            ("--permitidas", "", "--puertos", "22"),
+            ("--permitidas", "10.0.0.4", "--puertos", "22,5900/icmp"),
+            ("--permitidas", "10.0.0.4\nERROR=x", "--puertos", "22"),
             ("--permitidas", "10.0.0.4", "--puertos", "22,70000"),
             ("--permitidas", "10.0.0.4", "--puertos"),
             ("--otra", "x"),

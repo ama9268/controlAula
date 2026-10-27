@@ -80,6 +80,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"No hay aulas configuradas en {config.RUTA_POR_DEFECTO}")
             for a in cfg.aulas.values():
                 print(f"  {a.clave:<12} {a.nombre:<20} {a.inicio} – {a.fin}  profesor {a.profesor}")
+                if a.permitidas is not None:
+                    print(f"{'':15}salidas: {', '.join(a.permitidas)}")
+                if a.puertos is not None:
+                    print(f"{'':15}entradas: {', '.join(a.puertos)}")
             return 0
 
         obj = config.resolver_objetivo(cfg, args.aula, args.inicio, args.fin, args.profesor)
@@ -92,8 +96,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             resultados = funcion(obj.ips, cfg, _al_terminar)
         else:
             if args.accion == "bloquear":
-                print(f"Salidas permitidas: profesor {obj.profesor}, {', '.join(cfg.permitidas)}")
-                print(f"Entradas permitidas: puertos {', '.join(map(str, cfg.puertos))}")
+                print(f"Salidas permitidas: profesor {obj.profesor}, {', '.join(obj.permitidas)}")
+                print(f"Entradas permitidas: {', '.join(obj.puertos)}")
                 print(f"Autodesbloqueo en {horas:g} h")
                 locales = config.ips_locales()
                 if locales and obj.profesor not in locales:
@@ -103,7 +107,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return 1
             clave = _pedir_clave(cfg.usuario)
             if args.accion == "bloquear":
-                resultados = acciones.bloquear(obj.ips, cfg, clave, obj.profesor, horas, _al_terminar)
+                resultados = acciones.bloquear(obj.ips, cfg, clave, obj, horas, _al_terminar)
             else:
                 resultados = acciones.desbloquear(obj.ips, cfg, clave, _al_terminar)
             del clave

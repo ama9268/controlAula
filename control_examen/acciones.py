@@ -53,17 +53,18 @@ def _con_sudo(ips: List[str], cfg: Config, clave: str, argumentos: List[str],
         cfg.paralelo, al_terminar)
 
 
-def argumentos_bloqueo(cfg: Config, profesor: str, horas: float) -> List[str]:
-    permitidas = list(dict.fromkeys([config.validar_ip(profesor), *cfg.permitidas]))
+def argumentos_bloqueo(objetivo: Objetivo, horas: float) -> List[str]:
+    """Argumentos del agente. El PC del profesor siempre es un destino permitido."""
+    permitidas = list(dict.fromkeys([config.validar_ip(objetivo.profesor), *objetivo.permitidas]))
     return ["bloquear",
             "--permitidas", ",".join(permitidas),
-            "--puertos", ",".join(str(p) for p in cfg.puertos),
+            "--puertos", ",".join(objetivo.puertos),
             "--minutos", str(config.a_minutos(horas))]
 
 
-def bloquear(ips: List[str], cfg: Config, clave: str, profesor: str, horas: float,
+def bloquear(ips: List[str], cfg: Config, clave: str, objetivo: Objetivo, horas: float,
              al_terminar: AlTerminar = None) -> List[Resultado]:
-    return _con_sudo(ips, cfg, clave, argumentos_bloqueo(cfg, profesor, horas), al_terminar)
+    return _con_sudo(ips, cfg, clave, argumentos_bloqueo(objetivo, horas), al_terminar)
 
 
 def desbloquear(ips: List[str], cfg: Config, clave: str,

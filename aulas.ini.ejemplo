@@ -3,18 +3,32 @@
 [general]
 ; Usuario con el que se entra por SSH en los alumnos (el mismo que con cssh).
 usuario = profesor
-; Destinos permitidos además del PC del profesor: Moodle y servidor web.
+; Destinos a los que pueden salir los alumnos, además del PC del profesor.
+; Formatos: IP, red (IP/prefijo), IP:puerto o IP:puerto/tcp|udp (sin protocolo: tcp).
+;   10.0.0.4   10.0.5.0/24   10.0.0.2:443   10.0.0.9:53/udp
+; Moodle y servidor web:
 permitidas = 10.0.0.4, 10.0.0.2
 ; El bloqueo se retira solo pasadas estas horas (máximo 24).
 horas_autodesbloqueo = 4
-; Puertos de entrada permitidos: SSH (obligatorio) y Veyon.
+; Puertos de entrada permitidos: puerto o puerto/tcp|udp (sin protocolo: tcp).
+; El 22/tcp (SSH) se añade siempre. 11100: Veyon.
 puertos_entrada = 22, 11100
 ; Equipos a los que se conecta a la vez.
 paralelo = 30
 
 ; Una sección por aula. "profesor" es opcional (por defecto, la .253 de la red).
+; Opcionalmente, "permitidas" y/o "puertos_entrada" sustituyen a los de [general]
+; solo en esa aula (hay que repetir lo que se quiera mantener, como Moodle).
 [aula14]
 nombre = Aula 14
 inicio = 10.14.14.20
 fin = 10.14.14.45
 profesor = 10.14.14.253
+
+; Ejemplo con reglas propias:
+; [aula15]
+; nombre = Aula 15
+; inicio = 10.15.15.20
+; fin = 10.15.15.45
+; permitidas = 10.0.0.4, 10.0.0.2, 10.0.0.7:443
+; puertos_entrada = 22, 11100, 5900/udp
