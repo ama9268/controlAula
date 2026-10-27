@@ -5,7 +5,7 @@ Se ejecuta en el PC del profesor y actúa por SSH sobre un rango de IPs o un aul
 
 Con el bloqueo activo, cada PC de alumno:
 
-- **solo puede salir** hacia el PC del profesor y los destinos que configures (por defecto Moodle 10.0.0.4 y el servidor web 10.0.0.2), además de DHCP;
+- **solo puede salir** hacia el PC del profesor y los destinos que configures (por defecto Moodle x.x.x.4 y el servidor web x.x.x.2), además de DHCP;
 - **solo acepta entradas** por los puertos que configures (por defecto SSH 22 y Veyon 11100);
 - **pierde las conexiones salientes que ya tuviera abiertas** (pestañas, chats…);
 - **sigue bloqueado aunque se reinicie**;
@@ -90,12 +90,12 @@ Limitaciones conocidas:
 ```bash
 python3 -m unittest        # configuración, comandos remotos y validación del agente
 bash -n control_examen/agente/examen-fw.sh && shellcheck control_examen/agente/examen-fw.sh
-bash control_examen/agente/examen-fw.sh generar-nft --permitidas 10.14.14.253,10.0.0.4,10.0.0.2:443 --puertos 22,11100,5900/udp
+bash control_examen/agente/examen-fw.sh generar-nft --permitidas x.x.x.253,x.x.x.4,x.x.x.7:443 --puertos 22,11100,5900/udp
 ```
 
 Antes de usarlo en un examen real, pruébalo en un solo equipo:
 
-1. Bloquear y comprobar desde el alumno que `curl https://www.google.com` falla y que `curl http://10.0.0.4` funciona.
+1. Bloquear y comprobar desde el alumno que `curl https://www.google.com` falla y que `curl http://x.x.x.4` funciona.
 2. Comprobar que el SSH y Veyon del profesor siguen funcionando.
 3. Reiniciar el alumno y comprobar que sigue bloqueado.
 4. Probar `--horas 0.05` y comprobar que se libera solo a los 3 minutos.
